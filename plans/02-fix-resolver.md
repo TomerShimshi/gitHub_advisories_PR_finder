@@ -30,7 +30,12 @@ Find the fix commit and the fix PR for an advisory using only the GitHub API, wi
 - A fix can span several commits or a PR: the schema may need to allow a list.
 
 ## Changes from earlier plans
-_Update after Plan 1._
+From Plan 1 (see its Results):
+- **Multiple fix commits are common**: an advisory can link one commit per release branch (e.g. GHSA-jwrc-gm9j-263p has 3). Change the schema so the fix side holds a list of commits and PRs, and mark one as primary (e.g. the one on the default branch, or the earliest) for Plan 3 to work from.
+- **Don't infer the language from the ecosystem.** A `pip` advisory can have its fix in TypeScript.
+- Use the repository advisory link (`/security/advisories/GHSA-...`) and release tag links in the references as extra signals.
+- Reuse `GitHubClient._get` (caching, retries) by adding public methods for commits, commit-to-PR and compare. Commit data is immutable, so cache it with no TTL.
+- Build the ground-truth set from real advisories and save the recorded API responses as test fixtures.
 
 ## Results
 _Fill in when done._

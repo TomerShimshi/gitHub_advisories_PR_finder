@@ -1,0 +1,38 @@
+services:
+  # The tool itself. Usage: docker compose run --rm tracer fetch --limit 5
+  tracer:
+    build:
+      context: .
+      target: runtime
+    image: advisory-tracer:latest
+    # Secrets come in as environment variables; .env is never copied into the image.
+    env_file: .env
+    environment:
+      CACHE_DIR: /app/cache
+      OUTPUT_DIR: /app/output
+    # The only host paths the container can touch.
+    volumes:
+      - ./output:/app/output
+      - ./cache:/app/cache
+    # SECURITY: basic hardening. With more time: seccomp/AppArmor profiles, an egress allowlist
+    # (api.github.com, openrouter.ai only), and CPU/memory limits.
+    read_only: true
+    tmpfs:
+      - /tmp
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+
+  # Lint, type check and unit tests. Usage: docker compose run --rm tests
+  tests:
+    build:
+      context: .
+      target: test
+    profiles: ["test"]
+    # Unit tests must never reach the network or a real API.
+    network_mode: none
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true

@@ -1,0 +1,33 @@
+{
+  "ghsa_id": "GHSA-2222-3333-4444",
+  "cve_id": "CVE-2024-00001",
+  "url": "https://api.github.com/advisories/GHSA-2222-3333-4444",
+  "html_url": "https://github.com/advisories/GHSA-2222-3333-4444",
+  "summary": "Path traversal in example-lib file loader",
+  "description": "A crafted path allows reading files outside the base directory.",
+  "type": "reviewed",
+  "severity": "high",
+  "source_code_location": "https://github.com/example-org/example-lib",
+  "identifiers": [
+    {"type": "GHSA", "value": "GHSA-2222-3333-4444"},
+    {"type": "CVE", "value": "CVE-2024-00001"}
+  ],
+  "references": [
+    "https://nvd.nist.gov/vuln/detail/CVE-2024-00001",
+    "https://github.com/example-org/example-lib/commit/0123456789abcdef0123456789abcdef01234567",
+    "https://github.com/example-org/example-lib/pull/42",
+    "https://github.com/advisories/GHSA-2222-3333-4444"
+  ],
+  "published_at": "2024-05-01T12:00:00Z",
+  "updated_at": "2024-05-02T12:00:00Z",
+  "withdrawn_at": null,
+  "vulnerabilities": [
+    {
+      "package": {"ecosystem": "pip", "name": "example-lib"},
+      "vulnerable_version_range": "< 1.4.2",
+      "first_patched_version": "1.4.2",
+      "vulnerable_functions": ["example_lib.loader.load"]
+    }
+  ],
+  "cwes": [{"cwe_id": "CWE-22", "name": "Path Traversal"}]
+}
