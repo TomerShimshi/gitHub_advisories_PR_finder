@@ -5,7 +5,7 @@ import pytest
 import respx
 
 from advisory_tracer.cache import DiskCache
-from advisory_tracer.fix_resolver import FixResolver, _release_range, _tag_version
+from advisory_tracer.fix_resolver import FixResolver, _tag_version, release_range
 from advisory_tracer.github_client import GitHubClient
 from advisory_tracer.models import Advisory, Confidence
 
@@ -154,7 +154,7 @@ def test_search_fallback_finds_commit_mentioning_the_ghsa(resolver: FixResolver)
 
 
 @respx.mock
-def test_release_range_candidates_ranked_by_relevance(resolver: FixResolver) -> None:
+def testrelease_range_candidates_ranked_by_relevance(resolver: FixResolver) -> None:
     respx.get("https://api.github.com/search/commits").respond(json={"items": []})
     respx.get("https://api.github.com/search/issues").respond(json={"items": []})
     respx.get(f"{API}/tags").respond(
@@ -195,9 +195,9 @@ def test_tag_version(tag: str, package: str | None, expected: str | None) -> Non
     assert (str(version) if version else None) == expected
 
 
-def test_release_range_skips_prereleases_and_other_branches() -> None:
+def testrelease_range_skips_prereleases_and_other_branches() -> None:
     tags = ["v2.0.6", "v2.0.5", "v1.26.17", "v1.26.16", "v2.0.6rc1"]
 
-    assert _release_range(tags, "1.26.17", None) == ("v1.26.17", "v1.26.16")
-    assert _release_range(tags, "2.0.6", None) == ("v2.0.6", "v2.0.5")
-    assert _release_range(tags, "9.9.9", None) == (None, "v2.0.6")
+    assert release_range(tags, "1.26.17", None) == ("v1.26.17", "v1.26.16")
+    assert release_range(tags, "2.0.6", None) == ("v2.0.6", "v2.0.5")
+    assert release_range(tags, "9.9.9", None) == (None, "v2.0.6")

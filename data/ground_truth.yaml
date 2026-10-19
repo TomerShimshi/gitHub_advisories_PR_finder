@@ -7,6 +7,15 @@
 #                   public PR that merged it (null = none exists)
 # fix.linked        false when the advisory neither links nor mentions the fix; the deterministic
 #                   resolver should then hand over candidates instead of guessing
+#
+# introduced        the commit that introduced the vulnerability, by the usual definition (SZZ):
+#                   the earliest commit that wrote the code the fix changes or guards, skipping
+#                   commits that only reformat, rename or move it. When the flaw is a missing
+#                   check, it's the commit that added the unguarded code (or the incomplete
+#                   check). Cross-checked against the lower bound of the affected-version range.
+#   .primary / .also_primary / .commits   as for fix
+#   .reasoning      the fields the agent must also produce; `vulnerable_code` is quoted from the
+#                   introducing commit's own diff (checked by a script)
 
 - ghsa_id: GHSA-j8r2-6x86-q33q
   repo: psf/requests
@@ -17,6 +26,31 @@
       - sha: 74ea7cf7a6a27a4eeb2ae24e162bcc942a6706d5
         url: https://github.com/psf/requests/commit/74ea7cf7a6a27a4eeb2ae24e162bcc942a6706d5
         pr: null
+  introduced:
+    primary: 4d8cb3244e8e4f84b250c10a48e025f9a8bf6137
+    commits:
+      - sha: 4d8cb3244e8e4f84b250c10a48e025f9a8bf6137
+        url: https://github.com/psf/requests/commit/4d8cb3244e8e4f84b250c10a48e025f9a8bf6137
+        pr: 1951
+        pr_url: https://github.com/psf/requests/pull/1951
+    reasoning:
+      vulnerable_code_path: requests/sessions.py
+      vulnerable_code: |-
+        if username and password:
+            headers['Proxy-Authorization'] = _basic_auth_str(
+      why_vulnerable: >-
+        rebuild_proxies() runs on every redirect and re-attaches Proxy-Authorization whenever the
+        proxy URL has credentials, regardless of the target scheme. For HTTPS the proxy only sees
+        the CONNECT, so the header is tunnelled to the destination server (credential leak).
+      why_this_commit: >-
+        Blame on the fix's parent points to 90f7337 "Style changes" (2014-03-22), which only
+        re-indented the block. Blaming its parent (724038e) puts the whole rebuild_proxies method,
+        lines 205-242, on this commit, which created it. Released in 2.3.0, matching the
+        advisory's "Since Requests v2.3.0".
+      fix_link: >-
+        The fix changes this exact condition to `if not scheme.startswith('https') and username
+        and password:`.
+      confidence: high
   how_verified: >-
     Linked in the advisory. Title "Merge pull request from GHSA-j8r2-6x86-q33q" = merged from
     GitHub's private security fork, so no public PR exists.
@@ -30,6 +64,30 @@
       - sha: 716795349a41d4983a9a4771f7d883c96ea17be7
         url: https://github.com/pallets/jinja/commit/716795349a41d4983a9a4771f7d883c96ea17be7
         pr: null
+  introduced:
+    primary: 450756b9b93bc9b1a28c84b07289e4db3454c907
+    commits:
+      - sha: 450756b9b93bc9b1a28c84b07289e4db3454c907
+        url: https://github.com/pallets/jinja/commit/450756b9b93bc9b1a28c84b07289e4db3454c907
+        pr: null
+    reasoning:
+      vulnerable_code_path: jinja/filters.py
+      vulnerable_code: |-
+        result.append(u'%s="%s"' % (
+            e(env.to_unicode(key)),
+      why_vulnerable: >-
+        Attribute names are only HTML-escaped, never checked. A key containing a space (e.g.
+        'onclick=alert(1) x') becomes extra attributes in the output: HTML attribute injection
+        (CWE-79) when keys come from user input.
+      why_this_commit: >-
+        This commit created the xmlattr filter (2007, imported from SVN, so no PR). Blame on the
+        fix's parent points here for the docstring and to later commits for the join line, but
+        those are refactors with the same behaviour: 9a027f4 "improved filters" (2008, generator
+        form), 2a8515d "apply pyupgrade and f-strings" and 148a191 "remove _compat module"
+        (2020). The original code already emitted keys unchecked.
+      fix_link: >-
+        The fix rewrites this loop and raises ValueError when a key matches `\s`.
+      confidence: high
   how_verified: Linked in the advisory; private security fork merge, no public PR.
 
 - ghsa_id: GHSA-v845-jxx5-vc9f
@@ -45,6 +103,49 @@
         url: https://github.com/urllib3/urllib3/commit/01220354d389cd05474713f8c982d05c9b17aafb
         pr: 3139
         pr_url: https://github.com/urllib3/urllib3/pull/3139
+  introduced:
+    primary: 9c9dd6f3014e89bb9c532b641abcf1b24c3896ab
+    also_primary:
+      - 3d7f98b07b6e6e04c2e89cdf5afb18024a2d804c
+      - 63948f3a607ed8e7a3ce9ac4e20782359896e27e
+      - 2a42e70ff077006d5a6da92251ddbb2939303f94
+    commits:
+      - sha: 9c9dd6f3014e89bb9c532b641abcf1b24c3896ab
+        url: https://github.com/urllib3/urllib3/commit/9c9dd6f3014e89bb9c532b641abcf1b24c3896ab
+        pr: 1346
+        pr_url: https://github.com/urllib3/urllib3/pull/1346
+      - sha: 3d7f98b07b6e6e04c2e89cdf5afb18024a2d804c
+        url: https://github.com/urllib3/urllib3/commit/3d7f98b07b6e6e04c2e89cdf5afb18024a2d804c
+        pr: 1346
+        pr_url: https://github.com/urllib3/urllib3/pull/1346
+      - sha: 63948f3a607ed8e7a3ce9ac4e20782359896e27e
+        url: https://github.com/urllib3/urllib3/commit/63948f3a607ed8e7a3ce9ac4e20782359896e27e
+        pr: 1346
+        pr_url: https://github.com/urllib3/urllib3/pull/1346
+      - sha: 2a42e70ff077006d5a6da92251ddbb2939303f94
+        url: https://github.com/urllib3/urllib3/commit/2a42e70ff077006d5a6da92251ddbb2939303f94
+        pr: 1346
+        pr_url: https://github.com/urllib3/urllib3/pull/1346
+    reasoning:
+      vulnerable_code_path: urllib3/util/retry.py
+      vulnerable_code: |-
+        if remove_headers_on_redirect is None:
+            remove_headers_on_redirect = ['Authorization']
+      why_vulnerable: >-
+        The list of headers stripped on cross-origin redirects only contains Authorization, so a
+        user-set Cookie header is forwarded to the new origin (CWE-200).
+      why_this_commit: >-
+        The fix changes `DEFAULT_REMOVE_HEADERS_ON_REDIRECT = frozenset(["Authorization"])`.
+        Blame leads to 382ab32 "Rename Retry options" (2020) and then 266b347 "Auto formatting
+        using black" (2019), both cosmetic; before them the constant comes from 2a42e70 "Move
+        DEFAULT_REDIRECT_HEADERS_BLACKLIST under Retry". All four commits accepted here are PR
+        #1346 (2018), which introduced the strip-on-redirect list with Authorization only; this
+        commit is where the Authorization-only default first appears. Caveat: before PR #1346 no
+        header was stripped at all, so the Cookie leak itself is older; by the SZZ definition the
+        introducing change is the list the fix extends.
+      fix_link: >-
+        The fix adds "Cookie" to this default list (DEFAULT_REMOVE_HEADERS_ON_REDIRECT).
+      confidence: medium
   how_verified: >-
     Both linked. 644124e is the private-fork merge on main (no public PR); 0122035 is the 1.26.x
     backport, title "Backport GHSA-v845-jxx5-vc9f (#3139)".
@@ -67,6 +168,35 @@
         url: https://github.com/jupyterlab/jupyterlab/commit/0fc18ab4ef67e431a8f6560e387193baf786c70a
         pr: 19794
         pr_url: https://github.com/jupyterlab/jupyterlab/pull/19794
+  introduced:
+    primary: c5f522db11d0d20a2be5887186952d6b7144b6b6
+    also_primary: [5d9cb8c634e081028ea6df4dd7149a1b1a84ec56]
+    commits:
+      - sha: c5f522db11d0d20a2be5887186952d6b7144b6b6
+        url: https://github.com/jupyterlab/jupyterlab/commit/c5f522db11d0d20a2be5887186952d6b7144b6b6
+        pr: null
+      - sha: 5d9cb8c634e081028ea6df4dd7149a1b1a84ec56
+        url: https://github.com/jupyterlab/jupyterlab/commit/5d9cb8c634e081028ea6df4dd7149a1b1a84ec56
+        pr: null
+    reasoning:
+      vulnerable_code_path: packages/markdownviewer-extension/src/index.ts
+      vulnerable_code: const widget = tracker.currentWidget;
+      why_vulnerable: >-
+        The trust command decides which document to mark trusted when the user answers the
+        prompt, by reading tracker.currentWidget at that moment, not the document that was
+        clicked. If another document becomes current while the prompt is open, that one is
+        marked trusted (time-of-check/time-of-use, CWE-367).
+      why_this_commit: >-
+        Blame on the fix's parent puts 17 of the 19 removed lines on this commit, a private
+        security fork merge (2026-04-29) whose message lists "Ask before executing if not
+        trusted" and "Add Markdown Viewer trust command". It is the earlier fix for
+        GHSA-mqcg-5x36-vfcg that added the trust prompt; the advisory says the flaw exists
+        "since 4.5.7", the release with that prompt. A security fix introduced this one.
+        5d9cb8c is the same change on the 4.5.x branch (same timestamp and message), the commit
+        actually released in 4.5.7, so it is accepted too.
+      fix_link: >-
+        The fix passes the clicked document with the trust request and marks only that one.
+      confidence: high
   how_verified: >-
     All three linked, each titled "Fix for GHSA-jwrc-gm9j-263p". b64bc88 is on main; the other
     two are release-branch backports (4.6.4 and 4.5.11).
@@ -97,6 +227,33 @@
         url: https://github.com/pydantic/pydantic-ai/commit/7ee27e38ab2e525ca60ff1a25d16413ff989fd79
         pr: 8429
         pr_url: https://github.com/pydantic/pydantic-ai/pull/8429
+  introduced:
+    primary: cbe0a92dcdad5770f9a5f4e5991ed55a9d482275
+    commits:
+      - sha: cbe0a92dcdad5770f9a5f4e5991ed55a9d482275
+        url: https://github.com/pydantic/pydantic-ai/commit/cbe0a92dcdad5770f9a5f4e5991ed55a9d482275
+        pr: 2014
+        pr_url: https://github.com/pydantic/pydantic-ai/pull/2014
+    reasoning:
+      vulnerable_code_path: pydantic_ai_slim/pydantic_ai/models/instrumented.py
+      vulnerable_code: "include_content: bool = True,"
+      why_vulnerable: >-
+        This commit added the include_content setting, which promises to keep prompts,
+        completions and tool arguments/results out of telemetry, but applied it only to message
+        attributes. Exceptions recorded on spans (whose messages and stack traces quote tool
+        arguments, retry feedback and provider errors) stayed unredacted, so content still
+        reached the backend with include_content=False (CWE-200). A missing check: the
+        vulnerable code is the incomplete scrubbing.
+      why_this_commit: >-
+        Blame on the fix's parent points to 574f3f8 (#6601), which actually redacted part of it
+        (validation errors), and to a9cd11e (2026-05), a refactor that moved the unconditional
+        span.record_exception calls into the Instrumentation capability; neither is the origin.
+        The advisory's affected range starts at 0.3.4; v0.3.3...v0.3.4 has 3 commits and this is
+        the only one about content, adding include_content.
+      fix_link: >-
+        With include_content=False the fix records exception events with only the type, so the
+        setting finally covers exceptions.
+      confidence: medium
   how_verified: >-
     All linked, PR numbers match the "(#N)" squash titles. #8403 is the core fix ("share exception
     recording between agent run and tool spans", matching the advisory); #8408 and #8428 extend
@@ -116,6 +273,28 @@
         url: https://github.com/modelcontextprotocol/python-sdk/commit/92120b4b0f50385af096592d7cee932fc1d994e7
         pr: 3426
         pr_url: https://github.com/modelcontextprotocol/python-sdk/pull/3426
+  introduced:
+    primary: e4e119b32454b4bf7d72de28c1eb0559875caaf5
+    commits:
+      - sha: e4e119b32454b4bf7d72de28c1eb0559875caaf5
+        url: https://github.com/modelcontextprotocol/python-sdk/commit/e4e119b32454b4bf7d72de28c1eb0559875caaf5
+        pr: 641
+        pr_url: https://github.com/modelcontextprotocol/python-sdk/pull/641
+    reasoning:
+      vulnerable_code_path: src/mcp/server/streamable_http_manager.py
+      vulnerable_code: self._server_instances[http_transport.mcp_session_id] = http_transport
+      why_vulnerable: >-
+        Every new stateful session is added to _server_instances and never removed (only
+        cleared at shutdown): no expiry, no removal on DELETE, no cap. Any client can grow server
+        memory without bound (CWE-400/CWE-770).
+      why_this_commit: >-
+        This commit added streamable_http_manager.py (a new file) with StreamableHTTPSessionManager
+        and its session registry; blame on the fix's parent puts the most removed lines (36) on
+        it. Released in 1.8.0, the advisory's lower bound.
+      fix_link: >-
+        The fix expires idle sessions by default, removes them on DELETE or failure, and caps
+        the number of concurrent sessions.
+      confidence: high
   how_verified: Both linked; "(#3395)" on main and "[v1.x] ... (#3426)" backport.
 
 - ghsa_id: GHSA-c3jg-qh8m-j3h2
@@ -131,6 +310,40 @@
       - sha: a4d585eb374724b79676e9cceaa9e9a1a4358565
         url: https://github.com/Kozea/CairoSVG/commit/a4d585eb374724b79676e9cceaa9e9a1a4358565
         pr: null
+  introduced:
+    primary: e17f3cc6adc3a390633879f38a1fcae75de53e50
+    also_primary:
+      - db8b510110b781df248dc71e01013a1eb01951f7
+      - c4cc953e47bc33888fea419743efc06a2119a0ac
+    commits:
+      - sha: e17f3cc6adc3a390633879f38a1fcae75de53e50
+        url: https://github.com/Kozea/CairoSVG/commit/e17f3cc6adc3a390633879f38a1fcae75de53e50
+        pr: null
+      - sha: db8b510110b781df248dc71e01013a1eb01951f7
+        url: https://github.com/Kozea/CairoSVG/commit/db8b510110b781df248dc71e01013a1eb01951f7
+        pr: null
+      - sha: c4cc953e47bc33888fea419743efc06a2119a0ac
+        url: https://github.com/Kozea/CairoSVG/commit/c4cc953e47bc33888fea419743efc06a2119a0ac
+        pr: null
+    reasoning:
+      vulnerable_code_path: cairosvg/surface/path.py
+      vulnerable_code: point = node.vertices.pop(0)
+      why_vulnerable: >-
+        Two independent O(n^2) patterns on attacker-controlled SVG paths (CWE-407): the path
+        tokenizer re-slices the remaining string on every token (`while string:` with
+        `(string + " ").split(" ", 1)`), and draw_markers drains node.vertices with
+        list.pop(0), which is O(n) per call.
+      why_this_commit: >-
+        One origin per bug. Tokenizer: blame goes through cosmetic commits (8091c24 f-strings,
+        4f92112 quote style, 1065fb7 module split) to cairosvg/surface.py, where `while string:`
+        comes from e17f3cc "Initial commit" (2010) and the `(string + " ").split` form from
+        db8b510 (2011). Markers: c4cc953 "Fix the way markers are drawn" (2015) added both
+        node.vertices.pop(0) lines quoted here. The affected range "<= 2.9.0" (all versions)
+        agrees with the tokenizer dating from the first commit.
+      fix_link: >-
+        9d63f04 replaces the tokenizer with a single forward regex scan; a4d585e drains vertices
+        with deque.popleft() instead of list.pop(0).
+      confidence: medium
   how_verified: >-
     Both linked, both pushed to main without a PR. The advisory describes "two independent O(n^2)
     sites" in cairosvg/path.py: the tokenizer (fixed by 9d63f04, regex tokenizer) and
@@ -149,6 +362,30 @@
       - sha: 4720dfca2bde27fa140ec287a05709668fbdf168
         url: https://github.com/hydra-ecosystem/hydra/commit/4720dfca2bde27fa140ec287a05709668fbdf168
         pr: null
+  introduced:
+    primary: 0c2af39b155f784329e85cd4212d04e86904b1e8
+    commits:
+      - sha: 0c2af39b155f784329e85cd4212d04e86904b1e8
+        url: https://github.com/hydra-ecosystem/hydra/commit/0c2af39b155f784329e85cd4212d04e86904b1e8
+        pr: 1909
+        pr_url: https://github.com/hydra-ecosystem/hydra/pull/1909
+    reasoning:
+      vulnerable_code_path: plugins/hydra_optuna_sweeper/hydra_plugins/hydra_optuna_sweeper/_impl.py
+      vulnerable_code: self.custom_search_space_extender = get_method(custom_search_space)
+      why_vulnerable: >-
+        A dotted path from the (possibly untrusted) sweep configuration is resolved with
+        get_method(), which skips Hydra's execution policy, and the result is called later:
+        configuration can pick any importable callable to run (CWE-94/CWE-470).
+      why_this_commit: >-
+        The fix bundles several hardening changes, so blame of all removed lines is dominated by
+        other files. Restricting to the Optuna sweeper named in the advisory, every relevant
+        line (the get_method import, the resolution and the call) is blamed on this commit,
+        which added custom_search_space. The advisory's range starts at
+        hydra-optuna-sweeper 1.2.0, the release with this feature.
+      fix_link: >-
+        The fix resolves the callback through hydra.utils.instantiate() as a partial, so the
+        execution whitelist or blocklist applies.
+      confidence: high
   how_verified: >-
     Both linked, both titled "Merge commit from fork" (private security fork, no public PR).
     0dd1808 is on main; 4720dfc is on a release branch.
@@ -170,6 +407,49 @@
       - sha: 635d1dc4006c95a73f92b170ce0e183eb3ccddd6
         url: https://github.com/wger-project/wger/commit/635d1dc4006c95a73f92b170ce0e183eb3ccddd6
         pr: null
+  introduced:
+    primary: f26a6be485d5072a818845e41c09d42712f65d5d
+    also_primary:
+      - b8568c8c49860995010546cfb921559fd2ae6ed5
+      - eb1f1d984cc1d2d9a469aa7283dfe4742e6ef52e
+    commits:
+      - sha: f26a6be485d5072a818845e41c09d42712f65d5d
+        url: https://github.com/wger-project/wger/commit/f26a6be485d5072a818845e41c09d42712f65d5d
+        pr: 85
+        pr_url: https://github.com/wger-project/wger/pull/85
+      - sha: b8568c8c49860995010546cfb921559fd2ae6ed5
+        url: https://github.com/wger-project/wger/commit/b8568c8c49860995010546cfb921559fd2ae6ed5
+        pr: 85
+        pr_url: https://github.com/wger-project/wger/pull/85
+      - sha: eb1f1d984cc1d2d9a469aa7283dfe4742e6ef52e
+        url: https://github.com/wger-project/wger/commit/eb1f1d984cc1d2d9a469aa7283dfe4742e6ef52e
+        pr: null
+      - sha: dd9d3ab51e3f6a80c8257cc27cc2cb98826c7347
+        url: https://github.com/wger-project/wger/commit/dd9d3ab51e3f6a80c8257cc27cc2cb98826c7347
+        pr: null
+      - sha: 3637d1ae0217b936e999e1a3181b3bc5ff52028b
+        url: https://github.com/wger-project/wger/commit/3637d1ae0217b936e999e1a3181b3bc5ff52028b
+        pr: null
+      - sha: c91eda0d119a4f7efe6f22bbadaceca4e4cd63b6
+        url: https://github.com/wger-project/wger/commit/c91eda0d119a4f7efe6f22bbadaceca4e4cd63b6
+        pr: null
+    reasoning:
+      vulnerable_code_path: wger/gym/views/admin_notes.py
+      vulnerable_code: "if note.member.userprofile.gym_id != request.user.userprofile.gym_id:"
+      why_vulnerable: >-
+        The gym-scope guard compares two gym IDs that can both be None. For a trainer with no
+        gym viewing a member with no gym, None != None is False, the 403 is skipped, and the
+        member's private notes are returned (broken access control, CWE-863).
+      why_this_commit: >-
+        The flawed guard was copy-pasted into each view as it was written. Finding the
+        `gym_id !=` lines in the fix's parent and blaming them: admin notes views -> this commit
+        (2014-10-27, the earliest); documents -> b8568c8 (2014-11-01, same PR #85); contracts ->
+        eb1f1d9, dd9d3ab, 3637d1a, c91eda0 (2015). All are accepted; this one is primary because
+        it is the first and admin notes lead the advisory's list of affected views.
+      fix_link: >-
+        b51f472 replaces each `gym_id != gym_id` comparison with is_same_gym(), which also
+        rejects a None gym.
+      confidence: high
   how_verified: >-
     Advisory links only the 2.6 release tag. Found by reading the 2.5...2.6 range (371 commits):
     e1d329f adds is_same_gym() which rejects gym=None; b51f472 replaces the flawed
@@ -193,6 +473,28 @@
         url: https://github.com/langflow-ai/langflow/commit/94859df33acd70b2a1f816e26d68f5e89a7e5639
         pr: 14071
         pr_url: https://github.com/langflow-ai/langflow/pull/14071
+  introduced:
+    primary: d3d06be8e518e8be9bdbba5f3c1293bcce696940
+    commits:
+      - sha: d3d06be8e518e8be9bdbba5f3c1293bcce696940
+        url: https://github.com/langflow-ai/langflow/commit/d3d06be8e518e8be9bdbba5f3c1293bcce696940
+        pr: 8271
+        pr_url: https://github.com/langflow-ai/langflow/pull/8271
+    reasoning:
+      vulnerable_code_path: src/backend/base/langflow/api/v1/mcp_projects.py
+      vulnerable_code: return forwarded_for.split(",")[0].strip()
+      why_vulnerable: >-
+        get_client_ip() trusts the leftmost X-Forwarded-For entry, which the client fully
+        controls. Sending "X-Forwarded-For: 127.0.0.1" passes the local-only check on the MCP
+        install endpoint, letting a remote user write MCP config files (CWE-290/CWE-348).
+      why_this_commit: >-
+        Blame on the fix's parent puts all 8 removed lines of get_client_ip() on this commit,
+        which added the one-click MCP install feature with its local-only gate. The advisory's
+        range starts at 1.5.0, the release with this feature.
+      fix_link: >-
+        The fix stops trusting X-Forwarded-For for the locality check and uses the socket peer
+        address.
+      confidence: high
   how_verified: >-
     Both linked. PR #13915 was merged into the "security-hardening" branch and #14071 into
     "release-1.10.3" (checked via the API); neither commit is in main's history. #13915 is the

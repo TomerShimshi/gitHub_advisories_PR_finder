@@ -27,11 +27,31 @@ class FixTruth(BaseModel):
     linked: bool = True
 
 
+class IntroductionReasoning(BaseModel):
+    """Why a commit introduced the vulnerability (the same fields the agent must fill in)."""
+
+    vulnerable_code: str  # Lines the introducing commit added, quoted from its diff.
+    vulnerable_code_path: str | None = None  # File the quote is from, as named in that commit.
+    why_vulnerable: str
+    why_this_commit: str
+    fix_link: str
+    confidence: str = "high"
+
+
+class IntroducedTruth(BaseModel):
+    primary: str | None = None
+    also_primary: list[str] = Field(default_factory=list)
+    # Every commit accepted as introducing (e.g. the same flaw copied into several views).
+    commits: list[TruthCommit] = Field(default_factory=list)
+    reasoning: IntroductionReasoning | None = None
+
+
 class TruthEntry(BaseModel):
     ghsa_id: str
     repo: str
     advisory_url: str | None = None
     fix: FixTruth
+    introduced: IntroducedTruth | None = None
     how_verified: str = ""
 
 

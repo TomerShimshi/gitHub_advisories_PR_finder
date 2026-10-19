@@ -1,5 +1,7 @@
 """GitHub REST client: auth, retries, rate limits, pagination, and an on-disk response cache."""
 
+import base64
+import json
 import logging
 import time
 from collections.abc import Callable, Iterator
@@ -186,6 +188,103 @@ class GitHubClient:
         data, _ = self._get("/search/issues", {"q": query, "per_page": 20}, self._mutable_ttl)
         return list(data.get("items", []))
 
+    def list_commits(
+        self,
+        owner: str,
+        repo: str,
+        *,
+        ref: str,
+        path: str | None = None,
+        since: str | None = None,
+        until: str | None = None,
+        limit: int = 30,
+    ) -> list[dict[str, Any]]:
+        """Commits reachable from `ref` (newest first), optionally only those touching `path`
+        or committed between `since` and `until` (ISO 8601)."""
+        params: dict[str, Any] = {"sha": ref, "per_page": min(100, limit)}
+        for name, value in (("path", path), ("since", since), ("until", until)):
+            if value:
+                params[name] = value
+        ttl = None if _is_full_sha(ref) else self._mutable_ttl
+        data, _ = self._get(f"/repos/{owner}/{repo}/commits", params, ttl, transform=_trim_commits)
+        return list(data)[:limit]
+
+    def get_file_text(self, owner: str, repo: str, path: str, ref: str) -> str | None:
+        """A file's text at `ref`, or None if it is binary or over the API's 1 MB content limit."""
+        ttl = None if _is_full_sha(ref) else self._mutable_ttl
+        data, _ = self._get(
+            f"/repos/{owner}/{repo}/contents/{quote(path, safe='/')}", {"ref": ref}, ttl
+        )
+        if not isinstance(data, dict) or data.get("encoding") != "base64":
+            return None  # A directory, or a file too large for the contents API.
+        try:
+            return base64.b64decode(data["content"]).decode("utf-8")
+        except (ValueError, UnicodeDecodeError):
+            return None
+
+    def blame(self, owner: str, repo: str, ref: str, path: str) -> list[dict[str, Any]]:
+        """Blame `path` at commit `ref` (GraphQL; REST has no blame endpoint).
+
+        Returns ranges [{start, end, sha, date, title}] covering the file, 1-based inclusive."""
+        query = """
+        query($owner: String!, $name: String!, $ref: String!, $path: String!) {
+          repository(owner: $owner, name: $name) {
+            object(expression: $ref) {
+              ... on Commit {
+                blame(path: $path) {
+                  ranges {
+                    startingLine
+                    endingLine
+                    commit { oid committedDate messageHeadline }
+                  }
+                }
+              }
+            }
+          }
+        }"""
+        variables = {"owner": owner, "name": repo, "ref": ref, "path": path}
+        ttl = None if _is_full_sha(ref) else self._mutable_ttl
+        data = self.graphql(query, variables, ttl)
+        target = (data.get("repository") or {}).get("object")
+        if not target or "blame" not in target:
+            raise GitHubNotFoundError(f"cannot blame {path} at {ref} in {owner}/{repo}")
+        return [
+            {
+                "start": r["startingLine"],
+                "end": r["endingLine"],
+                "sha": r["commit"]["oid"],
+                "date": r["commit"]["committedDate"],
+                "title": r["commit"]["messageHeadline"],
+            }
+            for r in target["blame"]["ranges"]
+        ]
+
+    def graphql(
+        self, query: str, variables: dict[str, Any], ttl_seconds: float | None
+    ) -> dict[str, Any]:
+        compact_query = " ".join(query.split())
+        key = "graphql:" + json.dumps({"q": compact_query, "v": variables}, sort_keys=True)
+        if self._cache is not None:
+            cached = self._cache.get(_CACHE_NAMESPACE, key, ttl_seconds)
+            if cached is not None:
+                self.stats.cache_hits += 1
+                return dict(cached)
+
+        body = self._request_with_retries(
+            "/graphql", None, {"query": query, "variables": variables}
+        ).json()
+        # GraphQL reports errors with HTTP 200.
+        errors = body.get("errors") or []
+        if errors:
+            message = "; ".join(str(e.get("message")) for e in errors)
+            if any(e.get("type") == "NOT_FOUND" for e in errors):
+                raise GitHubNotFoundError(message)
+            raise GitHubError(f"GraphQL error: {message}")
+        data = dict(body.get("data") or {})
+        if self._cache is not None:
+            self._cache.set(_CACHE_NAMESPACE, key, data)
+        return data
+
     # --- Internals -----------------------------------------------------------------------------
 
     def _get(
@@ -214,12 +313,18 @@ class GitHubClient:
             self._cache.set(_CACHE_NAMESPACE, key, {"body": body, "next": next_url})
         return body, next_url
 
-    def _request_with_retries(self, url: str, params: dict[str, Any] | None) -> httpx.Response:
+    def _request_with_retries(
+        self, url: str, params: dict[str, Any] | None, json_body: Any = None
+    ) -> httpx.Response:
+        """GET, or POST when json_body is given (GraphQL)."""
         for attempt in range(self._max_retries + 1):
             last_attempt = attempt == self._max_retries
             try:
                 self.stats.network_calls += 1
-                response = self._http.get(url, params=params)
+                if json_body is None:
+                    response = self._http.get(url, params=params)
+                else:
+                    response = self._http.post(url, json=json_body)
             except httpx.TransportError as exc:
                 if last_attempt:
                     raise GitHubError(f"network error calling GitHub: {exc}") from exc
@@ -280,23 +385,29 @@ class GitHubClient:
         return None
 
 
+def _trim_commit(c: dict[str, Any]) -> dict[str, Any]:
+    """Keep each commit's SHA, message, date and parents; drop repeated author/URL objects."""
+    return {
+        "sha": c["sha"],
+        "commit": {
+            "message": c["commit"]["message"],
+            "committer": {"date": c["commit"]["committer"]["date"]},
+        },
+        "parents": [{"sha": p["sha"]} for p in c.get("parents", [])],
+    }
+
+
+def _trim_commits(body: Any) -> Any:
+    return [_trim_commit(c) for c in body] if isinstance(body, list) else body
+
+
 def _drop_compare_files(body: Any) -> Any:
-    """Keep only what callers use: status, counts, and each commit's SHA, message, date, parents.
-    The full response repeats author/committer objects and can carry megabytes of diff."""
+    """Keep only what callers use: status, counts and trimmed commits.
+    The full response can carry megabytes of diff."""
     if not isinstance(body, dict):
         return body
     body.pop("files", None)
-    body["commits"] = [
-        {
-            "sha": c["sha"],
-            "commit": {
-                "message": c["commit"]["message"],
-                "committer": {"date": c["commit"]["committer"]["date"]},
-            },
-            "parents": [{"sha": p["sha"]} for p in c.get("parents", [])],
-        }
-        for c in body.get("commits", [])
-    ]
+    body["commits"] = [_trim_commit(c) for c in body.get("commits", [])]
     for key in ("base_commit", "merge_base_commit"):
         if isinstance(body.get(key), dict):
             body[key] = {"sha": body[key]["sha"]}

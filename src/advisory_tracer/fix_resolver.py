@@ -46,7 +46,7 @@ _STOPWORDS = frozenset(
 )
 _TAG_PREFIXES = ("release-", "release_", "version-", "rel-", "v")
 # Titles GitHub gives merges from a security advisory's temporary private fork.
-_PRIVATE_FORK_MERGE_RE = re.compile(r"^Merge (pull request|commit) from (GHSA-|fork\b)")
+PRIVATE_FORK_MERGE_RE = re.compile(r"^Merge (pull request|commit) from (GHSA-|fork\b)")
 
 
 class FixResolver:
@@ -182,7 +182,7 @@ class FixResolver:
 
         candidates: dict[str, Candidate] = {}
         for patched_version, package in dict.fromkeys(patched):
-            patched_tag, previous_tag = _release_range(tags, patched_version, package)
+            patched_tag, previous_tag = release_range(tags, patched_version, package)
             if patched_tag is None or previous_tag is None:
                 result.notes.append(f"no tag range found for {package or ''} {patched_version}")
                 continue
@@ -193,14 +193,14 @@ class FixResolver:
                 result.notes.append(f"{source} failed: {exc}")
                 continue
             for commit in comparison.get("commits", []):
-                title = _title(commit["commit"]["message"])
+                title = commit_title(commit["commit"]["message"])
                 candidates.setdefault(
                     commit["sha"], Candidate(sha=commit["sha"], title=title, source=source)
                 )
             if comparison.get("total_commits", 0) > len(comparison.get("commits", [])):
                 result.notes.append(f"{source} has more commits than the API returns; truncated")
 
-        return _rank_candidates(list(candidates.values()), advisory)[:_MAX_CANDIDATES]
+        return rank_candidates(list(candidates.values()), advisory)[:_MAX_CANDIDATES]
 
     # --- Helpers --------------------------------------------------------------------------------
 
@@ -217,7 +217,7 @@ class FixResolver:
         return CommitFinding(
             sha=full_sha,
             commit_url=f"{repo.url}/commit/{full_sha}",
-            title=_title(commit["commit"]["message"]),
+            title=commit_title(commit["commit"]["message"]),
             committed_at=commit["commit"]["committer"]["date"],
             confidence=confidence,
             evidence=[evidence],
@@ -240,7 +240,7 @@ class FixResolver:
             or (merged[0] if merged else None)
         )
         if chosen is None:
-            if _PRIVATE_FORK_MERGE_RE.match(finding.title):
+            if PRIVATE_FORK_MERGE_RE.match(finding.title):
                 finding.evidence.append(
                     "merged from GitHub's temporary private security fork; that PR is deleted "
                     "after publication, so there is no public PR"
@@ -276,7 +276,7 @@ def _set_pr(finding: CommitFinding, pr: dict[str, Any]) -> None:
     finding.pr_url = pr.get("html_url")
 
 
-def _title(message: str) -> str:
+def commit_title(message: str) -> str:
     return message.splitlines()[0].strip() if message else ""
 
 
@@ -314,12 +314,15 @@ def _advisory_words(advisory: Advisory) -> set[str]:
 
 
 def _relevance(title: str, advisory_words: set[str]) -> int:
-    """How much a commit title looks like it is about this advisory."""
+    """How much a commit title looks like it is about this advisory. Merges from a private
+    security fork are security changes by definition, so they rank as strongly as a close
+    title match even though their titles say nothing."""
     shared = len(_keywords(title) & advisory_words)
-    return 2 * shared + (1 if _SECURITY_HINT_RE.search(title) else 0)
+    fork_merge = 6 if PRIVATE_FORK_MERGE_RE.match(title) else 0
+    return 2 * shared + (1 if _SECURITY_HINT_RE.search(title) else 0) + fork_merge
 
 
-def _rank_candidates(candidates: list[Candidate], advisory: Advisory) -> list[Candidate]:
+def rank_candidates(candidates: list[Candidate], advisory: Advisory) -> list[Candidate]:
     """Most relevant first. Cheap and deterministic; the agent does the real judging."""
     words = _advisory_words(advisory)
     # sorted() is stable, so ties keep commit order.
@@ -340,20 +343,33 @@ def _tag_version(tag: str, package: str | None) -> Version | None:
         return None
 
 
-def _release_range(
-    tags: list[str], patched: str, package: str | None
+def release_range(
+    tags: list[str], version: str, package: str | None
 ) -> tuple[str | None, str | None]:
-    """(tag of the patched version, tag of the closest earlier release) or Nones."""
+    """(tag of `version`, tag of the closest earlier release) or Nones. Pre-releases count as
+    "earlier" only when `version` is itself a pre-release."""
     try:
-        patched_version = Version(patched)
+        target = Version(version)
     except InvalidVersion:
         return None, None
     versions = [(v, t) for t in tags if (v := _tag_version(t, package)) is not None]
-    patched_tag = next((t for v, t in versions if v == patched_version), None)
+    tag = next((t for v, t in versions if v == target), None)
     earlier = [
-        (v, t)
-        for v, t in versions
-        if v < patched_version and (patched_version.is_prerelease or not v.is_prerelease)
+        (v, t) for v, t in versions if v < target and (target.is_prerelease or not v.is_prerelease)
     ]
     previous_tag = max(earlier)[1] if earlier else None
-    return patched_tag, previous_tag
+    return tag, previous_tag
+
+
+def next_release_tag(tags: list[str], version: str, package: str | None) -> str | None:
+    """Tag of the closest final release after `version`, or None."""
+    try:
+        target = Version(version)
+    except InvalidVersion:
+        return None
+    later = [
+        (v, t)
+        for t in tags
+        if (v := _tag_version(t, package)) is not None and v > target and not v.is_prerelease
+    ]
+    return min(later)[1] if later else None
