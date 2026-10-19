@@ -26,4 +26,9 @@ Measure how well the tool works and what it costs, cut the cost, and make the co
 _Update after Plan 4._
 
 ## Results
-_Fill in when done: final numbers for the README._
+**Merged with Plan 4 for time (2026-10-19).**
+- Eval: `eval-fix` (fix commit 10/10, fix PR 10/10, $0) and `eval-intro` (introducing commit and PR 5/5 on the 5 advisories run, ~$0.03–0.13 each). Tables are in the README.
+- Cost pass: deterministic-first, investigator/judge split, trimmed tool outputs, GitHub and LLM caches, and the compare-API fix (cache 65 MB → 4 MB). The investigator was switched from V4.1 Flash to V4 Pro after Flash missed 2 of 5.
+- README rewritten (setup, usage, cost controls, results, ground truth, security, limitations, layout). `# SECURITY:` comments are at the dangerous areas.
+- Last full check (before `pipeline.py` and `tracer run` were added): ruff, strict mypy and 106 tests passed in Docker.
+- **Not done:** the 5 remaining ground-truth advisories, unit tests for `llm.py` / `agent.py` / `pipeline.py`, a budget-cap stop test, and a fresh-clone README walkthrough.

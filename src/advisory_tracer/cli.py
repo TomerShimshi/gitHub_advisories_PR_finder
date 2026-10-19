@@ -15,6 +15,7 @@ from advisory_tracer.github_client import GitHubAuthError, GitHubClient, GitHubE
 from advisory_tracer.ingest import FetchResult, fetch_advisories, save_advisories
 from advisory_tracer.llm import LLM, BudgetExceeded, CostTracker, load_prices
 from advisory_tracer.models import Advisory, AdvisoryReport
+from advisory_tracer.pipeline import Pipeline
 from advisory_tracer.report import write_yaml
 
 log = logging.getLogger("advisory_tracer")
@@ -48,6 +49,9 @@ def _build_parser() -> argparse.ArgumentParser:
     evaluate = sub.add_parser("eval-fix", help="Run resolve-fix on the ground truth and score it.")
     evaluate.add_argument("--ground-truth", type=Path, default=Path("data/ground_truth.yaml"))
     evaluate.add_argument("--refresh", action="store_true", help="Ignore cached API responses.")
+
+    run = sub.add_parser("run", help="Full pipeline (fix + introducing) -> output/report.yaml.")
+    _add_selection_args(run)
 
     intro = sub.add_parser("eval-intro", help="Run the introducing-commit agent and score it.")
     intro.add_argument("--ground-truth", type=Path, default=Path("data/ground_truth.yaml"))
@@ -221,11 +225,48 @@ def _cmd_eval_intro(args: argparse.Namespace, settings: Settings) -> int:
     return EXIT_OK
 
 
+def _cmd_run(args: argparse.Namespace, settings: Settings) -> int:
+    """The full pipeline: fix and introducing commits/PRs, verified -> output/report.yaml."""
+    if not _validate_selection(args):
+        return EXIT_CONFIG
+    if settings.openrouter_api_key is None:
+        log.error("OPENROUTER_API_KEY is not set")
+        return EXIT_CONFIG
+    with _open_client(settings, args.refresh) as client:
+        pipeline = Pipeline(client, settings)
+        reports: list[AdvisoryReport] = []
+        stopped = None
+        path = settings.output_dir / "report.yaml"
+        for advisory in _select(client, args, settings).advisories:
+            try:
+                reports.append(pipeline.trace(advisory))
+            except BudgetExceeded as exc:
+                stopped = str(exc)
+                log.error("stopping early: %s", exc)
+                break
+            pipeline.write(reports, path, stopped)  # Partial results survive a crash or cap.
+            last = reports[-1]
+            log.info(
+                "%s  fix=%s pr=%s  introduced=%s pr=%s (%s)  $%.4f",
+                last.ghsa_id,
+                (last.fix.primary.sha or "not_found")[:12],
+                last.fix.primary.pr_number,
+                (last.introduced.sha or "not_found")[:12],
+                last.introduced.pr_number,
+                last.introduced.verdict.value,
+                last.cost_usd,
+            )
+        pipeline.write(reports, path, stopped)
+        log.info("report: %s  total cost $%.4f", path, pipeline.tracker.spent_usd)
+    return EXIT_OK
+
+
 _COMMANDS = {
     "fetch": _cmd_fetch,
     "resolve-fix": _cmd_resolve_fix,
     "eval-fix": _cmd_eval_fix,
     "eval-intro": _cmd_eval_intro,
+    "run": _cmd_run,
 }
 
 

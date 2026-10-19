@@ -34,4 +34,7 @@ One command that goes from advisory IDs to a verified YAML report, where every c
 _Update after Plan 3._
 
 ## Results
-_Fill in when done._
+**Merged with Plan 5 for time (2026-10-19).**
+- `tracer run --ids ... | --limit N` runs fetch → fix resolver → agent → verifier and writes `output/report.yaml` (run metadata, models, cost summary, one entry per advisory). The file is rewritten after every advisory, so partial results survive a crash or the budget cap. A failing advisory is recorded with its error and the run continues (`pipeline.py`).
+- Verifier (`verifier.py`), deterministic: the commit exists, it precedes at least one fix commit, and the quoted vulnerable code is in its added lines. Verdict is verified / plausible / rejected with a reason. Fix-side SHAs are all fetched from the repo before being reported (Plan 2).
+- **Not done:** the second-opinion LLM judge from a third model family, and unit tests that feed deliberately corrupted answers to the verifier. `tracer run` has not been executed end-to-end; it reuses the resolver, agent and verifier that `eval-fix` and `eval-intro` exercised.

@@ -11,10 +11,10 @@ Scored on: success rate, cost savings (out of a $150 budget), production readine
 | 1 | [Foundation and advisory ingestion](01-foundation-and-ingestion.md) | No | Done |
 | 2 | [Deterministic fix-side resolver](02-fix-resolver.md) | No | Done |
 | 3 | [LLM client, cost tracking, introducing-commit agent](03-introducing-commit-agent.md) | Yes | Done (5/5 run correct; gaps listed) |
-| 4 | [Full pipeline, YAML report, verifier](04-pipeline-and-verifier.md) | Yes | Not started |
-| 5 | [Evaluation, cost tuning, production readiness](05-eval-and-hardening.md) | Yes | Not started |
-| 6 | [Bonus 1: parallel agents](06-bonus-parallel.md) | Yes | Blocked on 5 |
-| 7 | [Bonus 2: Docker Compose generation](07-bonus-docker-generation.md) | Yes | Blocked on 5 |
+| 4 | [Full pipeline, YAML report, verifier](04-pipeline-and-verifier.md) | Yes | Done, merged with 5 (`tracer run`, `verifier.py`); LLM verifier and corrupted-result tests not done |
+| 5 | [Evaluation, cost tuning, production readiness](05-eval-and-hardening.md) | Yes | Done, merged with 4 (README, results, cost table); 5 ground-truth advisories not run |
+| 6 | [Bonus 1: parallel agents](06-bonus-parallel.md) | Yes | Dropped (time) |
+| 7 | [Bonus 2: Docker Compose generation](07-bonus-docker-generation.md) | Yes | Dropped (time) |
 
 Plan 5 is the "main objective done" gate. Bonuses start only after it passes.
 
