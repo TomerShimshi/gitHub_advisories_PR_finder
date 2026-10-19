@@ -4,17 +4,18 @@ import argparse
 import logging
 import re
 import sys
+from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 
 from advisory_tracer.agent import IntroducingAgent
 from advisory_tracer.cache import DiskCache
 from advisory_tracer.config import Settings
-from advisory_tracer.evaluate import format_table, load_ground_truth, score_fix
+from advisory_tracer.evaluate import TruthEntry, format_table, load_ground_truth, score_fix
 from advisory_tracer.fix_resolver import FixResolver
 from advisory_tracer.github_client import GitHubAuthError, GitHubClient, GitHubError
 from advisory_tracer.ingest import FetchResult, fetch_advisories, save_advisories
 from advisory_tracer.llm import LLM, BudgetExceeded, CostTracker, load_prices
-from advisory_tracer.models import Advisory, AdvisoryReport
+from advisory_tracer.models import Advisory, AdvisoryReport, CommitFinding, FixFinding
 from advisory_tracer.pipeline import Pipeline
 from advisory_tracer.report import write_yaml
 
@@ -52,10 +53,12 @@ def _build_parser() -> argparse.ArgumentParser:
 
     run = sub.add_parser("run", help="Full pipeline (fix + introducing) -> output/report.yaml.")
     _add_selection_args(run)
+    run.add_argument("--workers", type=int, default=4, help="Advisories traced in parallel.")
 
     intro = sub.add_parser("eval-intro", help="Run the introducing-commit agent and score it.")
     intro.add_argument("--ground-truth", type=Path, default=Path("data/ground_truth.yaml"))
     intro.add_argument("--ids", nargs="+", metavar="GHSA_ID", help="Only these entries.")
+    intro.add_argument("--workers", type=int, default=5, help="Advisories traced in parallel.")
     intro.add_argument("--refresh", action="store_true", help="Ignore cached API responses.")
     return parser
 
@@ -198,15 +201,25 @@ def _cmd_eval_intro(args: argparse.Namespace, settings: Settings) -> int:
         )
         resolver = FixResolver(client)
         reports = []
-        for entry in truth:
+
+        def trace(entry: TruthEntry) -> tuple[FixFinding, CommitFinding] | None:
             advisory = Advisory.from_api(client.get_advisory(entry.ghsa_id))
             assert advisory is not None
             fix = resolver.resolve(advisory)
             try:
-                found = agent.run(advisory, fix)
+                return fix, agent.run(advisory, fix)
             except BudgetExceeded as exc:
-                log.error("stopping: %s", exc)
-                break
+                log.error("%s skipped: %s", entry.ghsa_id, exc)
+                return None
+
+        # Advisories are independent: run them in parallel (cost tracker and caches are
+        # thread-safe). Results keep ground-truth order.
+        with ThreadPoolExecutor(max_workers=max(1, args.workers)) as pool:
+            results = list(pool.map(trace, truth))
+        for entry, result in zip(truth, results, strict=True):
+            if result is None:
+                continue
+            fix, found = result
             accepted = {c.sha: c.pr for c in entry.introduced.commits} if entry.introduced else {}
             ok = found.sha is not None and found.sha in accepted
             pr_ok = found.sha is not None and ok and found.pr_number == accepted.get(found.sha)
@@ -237,25 +250,34 @@ def _cmd_run(args: argparse.Namespace, settings: Settings) -> int:
         reports: list[AdvisoryReport] = []
         stopped = None
         path = settings.output_dir / "report.yaml"
-        for advisory in _select(client, args, settings).advisories:
+        advisories = _select(client, args, settings).advisories
+
+        def trace(advisory: Advisory) -> AdvisoryReport | None:
+            nonlocal stopped
             try:
-                reports.append(pipeline.trace(advisory))
+                return pipeline.trace(advisory)
             except BudgetExceeded as exc:
                 stopped = str(exc)
-                log.error("stopping early: %s", exc)
-                break
-            pipeline.write(reports, path, stopped)  # Partial results survive a crash or cap.
-            last = reports[-1]
-            log.info(
-                "%s  fix=%s pr=%s  introduced=%s pr=%s (%s)  $%.4f",
-                last.ghsa_id,
-                (last.fix.primary.sha or "not_found")[:12],
-                last.fix.primary.pr_number,
-                (last.introduced.sha or "not_found")[:12],
-                last.introduced.pr_number,
-                last.introduced.verdict.value,
-                last.cost_usd,
-            )
+                log.error("%s skipped: %s", advisory.ghsa_id, exc)
+                return None
+
+        # Advisories are independent: trace them in parallel (bounded to respect rate limits).
+        with ThreadPoolExecutor(max_workers=max(1, args.workers)) as pool:
+            for report in pool.map(trace, advisories):
+                if report is None:
+                    continue
+                reports.append(report)
+                pipeline.write(reports, path, stopped)  # Partial results survive a crash.
+                log.info(
+                    "%s  fix=%s pr=%s  introduced=%s pr=%s (%s)  $%.4f",
+                    report.ghsa_id,
+                    (report.fix.primary.sha or "not_found")[:12],
+                    report.fix.primary.pr_number,
+                    (report.introduced.sha or "not_found")[:12],
+                    report.introduced.pr_number,
+                    report.introduced.verdict.value,
+                    report.cost_usd,
+                )
         pipeline.write(reports, path, stopped)
         log.info("report: %s  total cost $%.4f", path, pipeline.tracker.spent_usd)
     return EXIT_OK

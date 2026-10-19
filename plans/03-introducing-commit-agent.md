@@ -130,7 +130,9 @@ From Plan 2 (see its Results):
 - The affected-range lower bound is a strong free signal (tool 9). Only the lowest bound per package counts, and fork merges are boosted in its ranking.
 - Release-branch twins exist (jupyterlab 4.5.x): an introducing commit only has to precede *a* fix commit, not the main-branch one.
 
+**Remaining 5, run later in parallel (`--workers 5`):** jupyterlab ✅ (verified), wger ✅ (plausible: quote not matched), urllib3 ❌ (wrong commit, flagged plausible, not verified), pydantic-ai ❌ and CairoSVG ❌ (not found). **Final: 7/10 commit and PR correct; no wrong answer marked verified.**
+
 **Known gaps:**
-- 5 of 10 ground-truth advisories not run yet: urllib3, jupyterlab, pydantic-ai, CairoSVG and wger, the hardest ones.
+- The 3 misses above (renamed or moved code, and bugs dating back to the initial commit).
 - Budget-cap stop not tested by a run (the code checks the cap before every call).
 - No unit tests yet for `llm.py` and `agent.py`.
