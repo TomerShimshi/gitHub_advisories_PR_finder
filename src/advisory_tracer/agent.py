@@ -17,7 +17,7 @@ from langgraph.graph import END, StateGraph
 from advisory_tracer.agent_tools import RepoTools
 from advisory_tracer.github_client import GitHubClient
 from advisory_tracer.llm import LLM
-from advisory_tracer.models import Advisory, CommitFinding, FixFinding
+from advisory_tracer.models import Advisory, CommitFinding, FixFinding, Verdict
 from advisory_tracer.verifier import IntroducedAnswer, verify_introduced
 
 log = logging.getLogger(__name__)
@@ -48,10 +48,18 @@ introducing commit's added lines. If the evidence is insufficient, set sha to nu
 in why_this_commit. Do not guess."""
 
 
+MAX_JUDGE_ATTEMPTS = 2  # The first answer plus one retry with the verifier's feedback.
+
+_VERDICT_RANK = {Verdict.VERIFIED: 3, Verdict.PLAUSIBLE: 2, Verdict.REJECTED: 1}
+
+
 class State(TypedDict):
     messages: list[BaseMessage]
     steps: int
     answer: IntroducedAnswer | None
+    attempts: int
+    feedback: str | None  # Why the last answer failed verification, for the retry.
+    finding: CommitFinding | None  # Best verified result so far.
 
 
 class IntroducingAgent:
@@ -106,27 +114,54 @@ class IntroducingAgent:
                 report = "(investigator ran out of steps; tool log:)\n" + "\n".join(
                     f"{c.tool}({c.args}) -> {c.result_summary}" for c in tools.calls
                 )
+            prompt = f"{_advisory_brief(advisory, fix)}\n\nINVESTIGATOR REPORT:\n{report}"
+            if state["feedback"]:  # Retry: the first answer failed the code checks.
+                prompt += f"\n\nYOUR PREVIOUS ANSWER FAILED VERIFICATION:\n{state['feedback']}"
             answer = self._judge.structured(
-                [
-                    SystemMessage(JUDGE_PROMPT),
-                    HumanMessage(
-                        f"{_advisory_brief(advisory, fix)}\n\nINVESTIGATOR REPORT:\n{report}"
-                    ),
-                ],
+                [SystemMessage(JUDGE_PROMPT), HumanMessage(prompt)],
                 IntroducedAnswer,
                 advisory=advisory_id,
-                purpose="judge",
+                purpose="judge" if not state["feedback"] else "judge-retry",
             )
-            return {**state, "answer": answer}
+            return {**state, "answer": answer, "attempts": state["attempts"] + 1}
+
+        def verify(state: State) -> State:
+            """Code checks the judge's answer; on failure, prepare feedback for one retry."""
+            evidence = [f"{c.tool}({c.args})" for c in tools.calls]
+            finding = verify_introduced(self._client, advisory, fix, state["answer"], evidence)
+            best = state["finding"]
+            if best is None or _VERDICT_RANK.get(finding.verdict, 0) > _VERDICT_RANK.get(
+                best.verdict, 0
+            ):
+                best = finding
+            feedback = None
+            if finding.verdict != Verdict.VERIFIED and finding.sha:
+                diff = self._client_diff(tools, finding.sha)
+                feedback = (
+                    f"You answered {finding.sha}. Verdict: {finding.verdict.value}: "
+                    f"{finding.verdict_reason}.\nThe introducing commit must come before a fix "
+                    "commit, and vulnerable_code must be lines that commit ADDED. Here is that "
+                    f"commit's actual diff:\n{diff}\nIf it did not introduce the vulnerability, "
+                    "pick the right commit from the report, or answer null."
+                )
+            return {**state, "finding": best, "feedback": feedback}
+
+        def after_verify(state: State) -> str:
+            if state["feedback"] and state["attempts"] < MAX_JUDGE_ATTEMPTS:
+                log.info("%s: answer failed verification, retrying the judge", advisory_id)
+                return "judge"
+            return "done"
 
         graph = StateGraph(State)
         graph.add_node("investigate", investigate)
         graph.add_node("tools", run_tools)
         graph.add_node("judge", judge)
+        graph.add_node("verify", verify)
         graph.set_entry_point("investigate")
         graph.add_conditional_edges("investigate", route, {"tools": "tools", "judge": "judge"})
         graph.add_edge("tools", "investigate")
-        graph.add_edge("judge", END)
+        graph.add_edge("judge", "verify")
+        graph.add_conditional_edges("verify", after_verify, {"judge": "judge", "done": END})
 
         # Deterministic head start: blamed vulnerable lines and the introduction window.
         primer = [
@@ -142,10 +177,24 @@ class IntroducingAgent:
             ],
             "steps": 0,
             "answer": None,
+            "attempts": 0,
+            "feedback": None,
+            "finding": None,
         }
-        final = graph.compile().invoke(start, {"recursion_limit": 2 * MAX_STEPS + 5})
-        evidence = [f"{c.tool}({c.args})" for c in tools.calls]
-        return verify_introduced(self._client, advisory, fix, final["answer"], evidence)
+        final = graph.compile().invoke(start, {"recursion_limit": 2 * MAX_STEPS + 10})
+        finding: CommitFinding | None = final["finding"]
+        assert finding is not None
+        if final["attempts"] > 1:
+            finding.evidence.append(
+                f"judge retried after failed verification; kept {finding.verdict.value}"
+            )
+        return finding
+
+    @staticmethod
+    def _client_diff(tools: RepoTools, sha: str) -> str:
+        """The claimed commit's diff for the retry prompt (outside the investigator's budget)."""
+        tools.budget.limit += 1
+        return tools.get_commit_diff(sha)[:8000]
 
 
 def _default_branch_fixes(fix: FixFinding) -> list[CommitFinding]:
