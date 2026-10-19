@@ -6,13 +6,15 @@ import re
 import sys
 from pathlib import Path
 
+from advisory_tracer.agent import IntroducingAgent
 from advisory_tracer.cache import DiskCache
 from advisory_tracer.config import Settings
 from advisory_tracer.evaluate import format_table, load_ground_truth, score_fix
 from advisory_tracer.fix_resolver import FixResolver
 from advisory_tracer.github_client import GitHubAuthError, GitHubClient, GitHubError
 from advisory_tracer.ingest import FetchResult, fetch_advisories, save_advisories
-from advisory_tracer.models import AdvisoryReport
+from advisory_tracer.llm import LLM, BudgetExceeded, CostTracker, load_prices
+from advisory_tracer.models import Advisory, AdvisoryReport
 from advisory_tracer.report import write_yaml
 
 log = logging.getLogger("advisory_tracer")
@@ -46,6 +48,11 @@ def _build_parser() -> argparse.ArgumentParser:
     evaluate = sub.add_parser("eval-fix", help="Run resolve-fix on the ground truth and score it.")
     evaluate.add_argument("--ground-truth", type=Path, default=Path("data/ground_truth.yaml"))
     evaluate.add_argument("--refresh", action="store_true", help="Ignore cached API responses.")
+
+    intro = sub.add_parser("eval-intro", help="Run the introducing-commit agent and score it.")
+    intro.add_argument("--ground-truth", type=Path, default=Path("data/ground_truth.yaml"))
+    intro.add_argument("--ids", nargs="+", metavar="GHSA_ID", help="Only these entries.")
+    intro.add_argument("--refresh", action="store_true", help="Ignore cached API responses.")
     return parser
 
 
@@ -162,7 +169,64 @@ def _cmd_eval_fix(args: argparse.Namespace, settings: Settings) -> int:
     return EXIT_OK
 
 
-_COMMANDS = {"fetch": _cmd_fetch, "resolve-fix": _cmd_resolve_fix, "eval-fix": _cmd_eval_fix}
+def _cmd_eval_intro(args: argparse.Namespace, settings: Settings) -> int:
+    """Run the introducing-commit agent on the ground truth and score it."""
+    if settings.openrouter_api_key is None:
+        log.error("OPENROUTER_API_KEY is not set")
+        return EXIT_CONFIG
+    truth = [
+        t for t in load_ground_truth(args.ground_truth) if not args.ids or t.ghsa_id in args.ids
+    ]
+    key = settings.openrouter_api_key.get_secret_value()
+    cache = DiskCache(settings.cache_dir)
+    tracker = CostTracker(settings.budget_usd, settings.advisory_budget_usd)
+    tracker.prices = load_prices(cache, key, settings.openrouter_base_url)
+
+    def make(model: str, max_tokens: int) -> LLM:
+        return LLM(model, api_key=key, base_url=settings.openrouter_base_url, tracker=tracker,
+                   cache=cache, max_tokens=max_tokens)
+
+    rows = []
+    with _open_client(settings, args.refresh) as client:
+        agent = IntroducingAgent(
+            client, make(settings.investigator_model, 4096), make(settings.judge_model, 2048),
+            settings.tool_call_budget,
+        )
+        resolver = FixResolver(client)
+        reports = []
+        for entry in truth:
+            advisory = Advisory.from_api(client.get_advisory(entry.ghsa_id))
+            assert advisory is not None
+            fix = resolver.resolve(advisory)
+            try:
+                found = agent.run(advisory, fix)
+            except BudgetExceeded as exc:
+                log.error("stopping: %s", exc)
+                break
+            accepted = {c.sha: c.pr for c in entry.introduced.commits} if entry.introduced else {}
+            ok = found.sha is not None and found.sha in accepted
+            pr_ok = found.sha is not None and ok and found.pr_number == accepted.get(found.sha)
+            rows.append((entry.ghsa_id, (found.sha or "not_found")[:12], ok, pr_ok,
+                         found.verdict.value, tracker.spent_on(entry.ghsa_id)))
+            reports.append(AdvisoryReport(ghsa_id=entry.ghsa_id, repo=entry.repo, fix=fix,
+                                          introduced=found,
+                                          cost_usd=tracker.spent_on(entry.ghsa_id)))
+            write_yaml(reports, settings.output_dir / "intro_eval_results.yaml")
+    print(f"{'advisory':<22}{'answer':<14}{'commit':<8}{'pr':<6}{'check':<11}{'cost':>9}")
+    for gid, sha, ok, pr_ok, verdict, cost in rows:
+        print(f"{gid:<22}{sha:<14}{'yes' if ok else 'NO':<8}{'yes' if pr_ok else 'NO':<6}"
+              f"{verdict:<11}${cost:>8.4f}")
+    print(f"introducing commit ok: {sum(r[2] for r in rows)}/{len(rows)}   "
+          f"PR ok: {sum(r[3] for r in rows)}/{len(rows)}   total cost: ${tracker.spent_usd:.4f}")
+    return EXIT_OK
+
+
+_COMMANDS = {
+    "fetch": _cmd_fetch,
+    "resolve-fix": _cmd_resolve_fix,
+    "eval-fix": _cmd_eval_fix,
+    "eval-intro": _cmd_eval_intro,
+}
 
 
 def main(argv: list[str] | None = None) -> int:

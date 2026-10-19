@@ -1,6 +1,6 @@
 # Plan 3: LLM client, cost tracking, introducing-commit agent
 
-**Status:** Planning approved (tools + reasoning fields); implementation not started
+**Status:** Done with known gaps (see Results)
 **Uses LLM:** Yes (first plan that spends money)
 
 ## Goal
@@ -105,4 +105,32 @@ From Plan 2 (see its Results):
 - The search API allows 30 requests per minute, and the client already waits it out. GraphQL blame has its own point budget, so watch it.
 
 ## Results
-_Fill in when done: accuracy on the ground-truth set, cost per advisory, model choices, clone decision._
+**Status: done, with known gaps** (2026-10-19). Commands: `tracer eval-intro [--ids ...]` → `output/intro_eval_results.yaml`.
+
+**Agent (`agent.py`, LangGraph):** deterministic head start (blamed vulnerable lines and the introduction window) → investigator tool loop (max 12 steps, 20 tool calls) → Opus judge (one structured call) → code checks: the SHA exists, it is an ancestor of a fix commit, the `vulnerable_code` quote is in its added lines, and the PR is looked up via the API.
+
+**Ground truth, 5 of 10 advisories run:**
+
+| Advisory | Introducing commit | PR | Check | Cost |
+|---|---|---|---|---|
+| requests GHSA-j8r2 | 4d8cb324 ✅ | #1951 ✅ | verified | ~$0.03 |
+| langflow GHSA-4f6c | d3d06be8 ✅ | #8271 ✅ | verified | ~$0.03 |
+| hydra GHSA-5jjj | 0c2af39b ✅ | #1909 ✅ | verified | $0.031 |
+| jinja GHSA-h5c8 | 450756b9 ✅ | none ✅ | verified | $0.066 (V4 Pro) |
+| mcp GHSA-84m7 | e4e119b3 ✅ | #641 ✅ | verified | $0.134 (V4 Pro) |
+
+**5/5 commit and PR correct, all passing the code checks; about $0.03–0.13 per advisory.**
+
+**Model decision:** investigator DeepSeek V4.1 Flash got 3/5; on jinja and mcp it gathered too little evidence and the judge correctly answered "not found" rather than guessing. Switching the investigator to `deepseek/deepseek-v4-pro` ($0.43/$0.86) solved both, so it is now the default. Judge: `anthropic/claude-opus-5.5` (~$0.026 per call). Opus 5.5 rejects a forced `tool_choice`, so structured output is requested by instruction and validated.
+
+**Clone fallback:** not needed. All 5 were solved through the GitHub API alone (REST plus GraphQL blame).
+
+**Other findings during the build:**
+- Blame often lands on reformat commits ("Style changes", black, pyupgrade); the agent walks past them.
+- The affected-range lower bound is a strong free signal (tool 9). Only the lowest bound per package counts, and fork merges are boosted in its ranking.
+- Release-branch twins exist (jupyterlab 4.5.x): an introducing commit only has to precede *a* fix commit, not the main-branch one.
+
+**Known gaps:**
+- 5 of 10 ground-truth advisories not run yet: urllib3, jupyterlab, pydantic-ai, CairoSVG and wger, the hardest ones.
+- Budget-cap stop not tested by a run (the code checks the cap before every call).
+- No unit tests yet for `llm.py` and `agent.py`.

@@ -23,3 +23,18 @@ class Settings(BaseSettings):
     http_timeout_seconds: float = Field(default=30.0, alias="HTTP_TIMEOUT_SECONDS")
     http_max_retries: int = Field(default=3, alias="HTTP_MAX_RETRIES")
     log_level: str = Field(default="INFO", alias="LOG_LEVEL")
+
+    # LLMs (via OpenRouter). Pinned versions, never "~latest" aliases, so results are repeatable.
+    openrouter_base_url: str = Field(
+        default="https://openrouter.ai/api/v1", alias="OPENROUTER_BASE_URL"
+    )
+    investigator_model: str = Field(
+        # V4.1 Flash missed jinja and mcp (judge: insufficient evidence); V4 Pro got both.
+        default="deepseek/deepseek-v4-pro", alias="INVESTIGATOR_MODEL"
+    )
+    judge_model: str = Field(default="anthropic/claude-opus-5.5", alias="JUDGE_MODEL")
+    # Hard caps in US dollars: the run stops cleanly (keeping results so far) when reached.
+    budget_usd: float = Field(default=5.0, alias="BUDGET_USD")
+    advisory_budget_usd: float = Field(default=0.50, alias="ADVISORY_BUDGET_USD")
+    # Tool calls the investigator may make per advisory.
+    tool_call_budget: int = Field(default=20, alias="TOOL_CALL_BUDGET")
