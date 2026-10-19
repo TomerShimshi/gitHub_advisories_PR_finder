@@ -1,0 +1,16 @@
+# Secrets
+.env
+.env.*
+!.env.example
+
+# Runtime data
+output/
+cache/
+
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
