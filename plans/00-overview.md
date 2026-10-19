@@ -9,7 +9,7 @@ Scored on: success rate, cost savings (out of a $150 budget), production readine
 | # | Plan | Uses LLM | Status |
 |---|------|----------|--------|
 | 1 | [Foundation and advisory ingestion](01-foundation-and-ingestion.md) | No | Done |
-| 2 | [Deterministic fix-side resolver](02-fix-resolver.md) | No | Not started |
+| 2 | [Deterministic fix-side resolver](02-fix-resolver.md) | No | Done |
 | 3 | [LLM client, cost tracking, introducing-commit agent](03-introducing-commit-agent.md) | Yes | Not started |
 | 4 | [Full pipeline, YAML report, verifier](04-pipeline-and-verifier.md) | Yes | Not started |
 | 5 | [Evaluation, cost tuning, production readiness](05-eval-and-hardening.md) | Yes | Not started |

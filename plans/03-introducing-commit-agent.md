@@ -38,7 +38,14 @@ Given a known fix commit, find the commit (and PR) that introduced the vulnerabi
 - Squash-merged PRs: the commit-to-PR mapping still works but the PR may hold several changes.
 
 ## Changes from earlier plans
-_Update after Plan 2._
+From Plan 2 (see its Results):
+- **Start from every default-branch fix commit, not just the primary.** Multi-part fixes are common (CairoSVG: 2 independent bugs; pydantic-ai: 3 commits on main). Backports on release branches show the same change again, so skip them for blame. If no fix commit is on the default branch (langflow), use the one the fix was merged into.
+- **Private security fork merges** ("Merge pull request from GHSA-...") are merge commits. Take the diff against the first parent and blame on the first parent.
+- **New first step for deferred advisories:** when the resolver found no fix (`fix.candidates` set, like wger), the agent must first pick the fix commit(s) from the ranked candidates. Use the cheap model, and fetch the diffs of only the top few candidates. Score it with the ground truth's `candidate_rank` and `deferred` outcome.
+- **Candidates for the 7% with none:** monorepo sub-packages with no version tags (PraisonAI) and advisories with no patched version (pyload). Add a date-window fallback: commits in the ~30 days before `published_at`, ranked the same way.
+- **Diffs are large.** A single commit payload can be 1 MB (langflow backports). Send the model only the hunks for relevant files, and trim the rest. This is the main cost lever.
+- **The ground truth needs introducing commits.** Extend `data/ground_truth.yaml` with an `introduced` section (commit, PR, how verified) for the same 10 advisories before measuring.
+- The search API allows 30 requests per minute, and the client already waits it out. GraphQL blame has its own point budget, so watch it.
 
 ## Results
 _Fill in when done: accuracy on the ground-truth set, cost per advisory, model choices, clone decision._

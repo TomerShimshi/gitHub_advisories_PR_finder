@@ -14,6 +14,7 @@ services:
     volumes:
       - ./output:/app/output
       - ./cache:/app/cache
+      - ./data:/app/data:ro
     # SECURITY: basic hardening. With more time: seccomp/AppArmor profiles, an egress allowlist
     # (api.github.com, openrouter.ai only), and CPU/memory limits.
     read_only: true

@@ -9,6 +9,7 @@ description = "Trace GitHub security advisories to the commits and PRs that intr
 requires-python = ">=3.12"
 dependencies = [
     "httpx>=0.28,<1",
+    "packaging>=24",
     "pydantic>=2.9,<3",
     "pydantic-settings>=2.6,<3",
     "PyYAML>=6.0,<7",

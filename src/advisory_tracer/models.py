@@ -133,6 +133,9 @@ class CommitFinding(BaseModel):
 
     sha: str | None = None
     commit_url: str | None = None
+    title: str = ""  # First line of the commit message.
+    committed_at: datetime | None = None
+    on_default_branch: bool | None = None
     pr_number: int | None = None
     pr_url: str | None = None
     confidence: Confidence = Confidence.NONE
@@ -142,12 +145,33 @@ class CommitFinding(BaseModel):
     verdict_reason: str = ""
 
 
+class Candidate(BaseModel):
+    """A commit that might be the answer but isn't confirmed (left for the agent to judge)."""
+
+    sha: str
+    title: str = ""
+    source: str = ""  # How it was found, e.g. "compare 1.4.1...1.4.2".
+
+
+class FixFinding(BaseModel):
+    """The fix side. One fix can span several commits (e.g. one backport per release branch)."""
+
+    primary: CommitFinding = Field(default_factory=CommitFinding)
+    commits: list[CommitFinding] = Field(default_factory=list)
+    candidates: list[Candidate] = Field(default_factory=list)
+    notes: list[str] = Field(default_factory=list)
+
+    @property
+    def found(self) -> bool:
+        return self.primary.sha is not None
+
+
 class AdvisoryReport(BaseModel):
     ghsa_id: str
     cve_id: str | None = None
     repo: str
     summary: str = ""
-    fix: CommitFinding = Field(default_factory=CommitFinding)
+    fix: FixFinding = Field(default_factory=FixFinding)
     introduced: CommitFinding = Field(default_factory=CommitFinding)
     cost_usd: float = 0.0
     error: str | None = None

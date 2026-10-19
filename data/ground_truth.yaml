@@ -1,0 +1,199 @@
+# Hand-checked answers for evaluating the tool. Each entry says how it was verified, and links
+# the advisory, every fix commit and every PR so it can be re-checked by hand.
+#
+# fix.primary       the commit a person would call "the fix"
+# fix.also_primary  other commits equally valid as "the fix" (fixes in several equal parts)
+# fix.commits       every accepted fix commit (backports and multi-part fixes included), with the
+#                   public PR that merged it (null = none exists)
+# fix.linked        false when the advisory neither links nor mentions the fix; the deterministic
+#                   resolver should then hand over candidates instead of guessing
+
+- ghsa_id: GHSA-j8r2-6x86-q33q
+  repo: psf/requests
+  advisory_url: https://github.com/advisories/GHSA-j8r2-6x86-q33q
+  fix:
+    primary: 74ea7cf7a6a27a4eeb2ae24e162bcc942a6706d5
+    commits:
+      - sha: 74ea7cf7a6a27a4eeb2ae24e162bcc942a6706d5
+        url: https://github.com/psf/requests/commit/74ea7cf7a6a27a4eeb2ae24e162bcc942a6706d5
+        pr: null
+  how_verified: >-
+    Linked in the advisory. Title "Merge pull request from GHSA-j8r2-6x86-q33q" = merged from
+    GitHub's private security fork, so no public PR exists.
+
+- ghsa_id: GHSA-h5c8-rqwp-cp95
+  repo: pallets/jinja
+  advisory_url: https://github.com/advisories/GHSA-h5c8-rqwp-cp95
+  fix:
+    primary: 716795349a41d4983a9a4771f7d883c96ea17be7
+    commits:
+      - sha: 716795349a41d4983a9a4771f7d883c96ea17be7
+        url: https://github.com/pallets/jinja/commit/716795349a41d4983a9a4771f7d883c96ea17be7
+        pr: null
+  how_verified: Linked in the advisory; private security fork merge, no public PR.
+
+- ghsa_id: GHSA-v845-jxx5-vc9f
+  repo: urllib3/urllib3
+  advisory_url: https://github.com/advisories/GHSA-v845-jxx5-vc9f
+  fix:
+    primary: 644124ecd0b6e417c527191f866daa05a5a2056d
+    commits:
+      - sha: 644124ecd0b6e417c527191f866daa05a5a2056d
+        url: https://github.com/urllib3/urllib3/commit/644124ecd0b6e417c527191f866daa05a5a2056d
+        pr: null
+      - sha: 01220354d389cd05474713f8c982d05c9b17aafb
+        url: https://github.com/urllib3/urllib3/commit/01220354d389cd05474713f8c982d05c9b17aafb
+        pr: 3139
+        pr_url: https://github.com/urllib3/urllib3/pull/3139
+  how_verified: >-
+    Both linked. 644124e is the private-fork merge on main (no public PR); 0122035 is the 1.26.x
+    backport, title "Backport GHSA-v845-jxx5-vc9f (#3139)".
+
+- ghsa_id: GHSA-jwrc-gm9j-263p
+  repo: jupyterlab/jupyterlab
+  advisory_url: https://github.com/advisories/GHSA-jwrc-gm9j-263p
+  fix:
+    primary: b64bc88b8ca034cf158604a5cc48ca9170ea453b
+    commits:
+      - sha: b64bc88b8ca034cf158604a5cc48ca9170ea453b
+        url: https://github.com/jupyterlab/jupyterlab/commit/b64bc88b8ca034cf158604a5cc48ca9170ea453b
+        pr: 19792
+        pr_url: https://github.com/jupyterlab/jupyterlab/pull/19792
+      - sha: f7e5f9803fdf2aaaa0e9bfb9cc73386a8cc5f0b2
+        url: https://github.com/jupyterlab/jupyterlab/commit/f7e5f9803fdf2aaaa0e9bfb9cc73386a8cc5f0b2
+        pr: 19793
+        pr_url: https://github.com/jupyterlab/jupyterlab/pull/19793
+      - sha: 0fc18ab4ef67e431a8f6560e387193baf786c70a
+        url: https://github.com/jupyterlab/jupyterlab/commit/0fc18ab4ef67e431a8f6560e387193baf786c70a
+        pr: 19794
+        pr_url: https://github.com/jupyterlab/jupyterlab/pull/19794
+  how_verified: >-
+    All three linked, each titled "Fix for GHSA-jwrc-gm9j-263p". b64bc88 is on main; the other
+    two are release-branch backports (4.6.4 and 4.5.11).
+
+- ghsa_id: GHSA-4x9p-g9wm-8q7f
+  repo: pydantic/pydantic-ai
+  advisory_url: https://github.com/advisories/GHSA-4x9p-g9wm-8q7f
+  fix:
+    primary: 6b14c74cb281f899a2ae4fae5327111e33f60771
+    commits:
+      - sha: 6b14c74cb281f899a2ae4fae5327111e33f60771
+        url: https://github.com/pydantic/pydantic-ai/commit/6b14c74cb281f899a2ae4fae5327111e33f60771
+        pr: 8403
+        pr_url: https://github.com/pydantic/pydantic-ai/pull/8403
+      - sha: 4e013c51a50659aba2adf7853bfb22bb77f6a518
+        url: https://github.com/pydantic/pydantic-ai/commit/4e013c51a50659aba2adf7853bfb22bb77f6a518
+        pr: 8408
+        pr_url: https://github.com/pydantic/pydantic-ai/pull/8408
+      - sha: de4e61515327bd80a19cd8552001c30933e6acc3
+        url: https://github.com/pydantic/pydantic-ai/commit/de4e61515327bd80a19cd8552001c30933e6acc3
+        pr: 8428
+        pr_url: https://github.com/pydantic/pydantic-ai/pull/8428
+      - sha: 963dec5f70d6f558997fc259356c0090cc5ea487
+        url: https://github.com/pydantic/pydantic-ai/commit/963dec5f70d6f558997fc259356c0090cc5ea487
+        pr: 8404
+        pr_url: https://github.com/pydantic/pydantic-ai/pull/8404
+      - sha: 7ee27e38ab2e525ca60ff1a25d16413ff989fd79
+        url: https://github.com/pydantic/pydantic-ai/commit/7ee27e38ab2e525ca60ff1a25d16413ff989fd79
+        pr: 8429
+        pr_url: https://github.com/pydantic/pydantic-ai/pull/8429
+  how_verified: >-
+    All linked, PR numbers match the "(#N)" squash titles. #8403 is the core fix ("share exception
+    recording between agent run and tool spans", matching the advisory); #8408 and #8428 extend
+    it on main; #8404 and #8429 are v1 backports.
+
+- ghsa_id: GHSA-84m7-p3x7-pcfv
+  repo: modelcontextprotocol/python-sdk
+  advisory_url: https://github.com/advisories/GHSA-84m7-p3x7-pcfv
+  fix:
+    primary: d2290ca3434731b68ea3e2270bc06a6e6575931b
+    commits:
+      - sha: d2290ca3434731b68ea3e2270bc06a6e6575931b
+        url: https://github.com/modelcontextprotocol/python-sdk/commit/d2290ca3434731b68ea3e2270bc06a6e6575931b
+        pr: 3395
+        pr_url: https://github.com/modelcontextprotocol/python-sdk/pull/3395
+      - sha: 92120b4b0f50385af096592d7cee932fc1d994e7
+        url: https://github.com/modelcontextprotocol/python-sdk/commit/92120b4b0f50385af096592d7cee932fc1d994e7
+        pr: 3426
+        pr_url: https://github.com/modelcontextprotocol/python-sdk/pull/3426
+  how_verified: Both linked; "(#3395)" on main and "[v1.x] ... (#3426)" backport.
+
+- ghsa_id: GHSA-c3jg-qh8m-j3h2
+  repo: Kozea/CairoSVG
+  advisory_url: https://github.com/advisories/GHSA-c3jg-qh8m-j3h2
+  fix:
+    primary: 9d63f049f9988d0ddda3eb94564ac3a50a286523
+    also_primary: [a4d585eb374724b79676e9cceaa9e9a1a4358565]
+    commits:
+      - sha: 9d63f049f9988d0ddda3eb94564ac3a50a286523
+        url: https://github.com/Kozea/CairoSVG/commit/9d63f049f9988d0ddda3eb94564ac3a50a286523
+        pr: null
+      - sha: a4d585eb374724b79676e9cceaa9e9a1a4358565
+        url: https://github.com/Kozea/CairoSVG/commit/a4d585eb374724b79676e9cceaa9e9a1a4358565
+        pr: null
+  how_verified: >-
+    Both linked, both pushed to main without a PR. The advisory describes "two independent O(n^2)
+    sites" in cairosvg/path.py: the tokenizer (fixed by 9d63f04, regex tokenizer) and
+    draw_markers' list.pop(0) (fixed by a4d585e, deque.popleft). Each fixes half of the issue, so
+    either is a valid primary.
+
+- ghsa_id: GHSA-5jjj-9xc3-rm56
+  repo: hydra-ecosystem/hydra
+  advisory_url: https://github.com/advisories/GHSA-5jjj-9xc3-rm56
+  fix:
+    primary: 0dd18084589a3d3e577d1f1a8a48fb485c94a5e6
+    commits:
+      - sha: 0dd18084589a3d3e577d1f1a8a48fb485c94a5e6
+        url: https://github.com/hydra-ecosystem/hydra/commit/0dd18084589a3d3e577d1f1a8a48fb485c94a5e6
+        pr: null
+      - sha: 4720dfca2bde27fa140ec287a05709668fbdf168
+        url: https://github.com/hydra-ecosystem/hydra/commit/4720dfca2bde27fa140ec287a05709668fbdf168
+        pr: null
+  how_verified: >-
+    Both linked, both titled "Merge commit from fork" (private security fork, no public PR).
+    0dd1808 is on main; 4720dfc is on a release branch.
+
+- ghsa_id: GHSA-c72h-82w6-rqfp
+  repo: wger-project/wger
+  advisory_url: https://github.com/advisories/GHSA-c72h-82w6-rqfp
+  fix:
+    linked: false
+    primary: b51f472ab2f790d8b4e67b4371bd6d1915af2930
+    also_primary: [e1d329ff4ef6213b0a1adc5daf115e6d8981190c]
+    commits:
+      - sha: e1d329ff4ef6213b0a1adc5daf115e6d8981190c
+        url: https://github.com/wger-project/wger/commit/e1d329ff4ef6213b0a1adc5daf115e6d8981190c
+        pr: null
+      - sha: b51f472ab2f790d8b4e67b4371bd6d1915af2930
+        url: https://github.com/wger-project/wger/commit/b51f472ab2f790d8b4e67b4371bd6d1915af2930
+        pr: null
+      - sha: 635d1dc4006c95a73f92b170ce0e183eb3ccddd6
+        url: https://github.com/wger-project/wger/commit/635d1dc4006c95a73f92b170ce0e183eb3ccddd6
+        pr: null
+  how_verified: >-
+    Advisory links only the 2.6 release tag. Found by reading the 2.5...2.6 range (371 commits):
+    e1d329f adds is_same_gym() which rejects gym=None; b51f472 replaces the flawed
+    "gym_id != gym_id" guard with it in the admin_notes, contract and document views named in the
+    advisory; 635d1dc extends the helper to the remaining checks. No PRs (pushed directly).
+    Primary = b51f472 because it changes the vulnerable views; e1d329f (which adds the safe helper)
+    is accepted too. 635d1dc only extends the helper to other checks, so it is a fix commit but not
+    the primary.
+
+- ghsa_id: GHSA-4f6c-2vvp-gw82
+  repo: langflow-ai/langflow
+  advisory_url: https://github.com/advisories/GHSA-4f6c-2vvp-gw82
+  fix:
+    primary: 1f39a4b9d62c9dfa1b21fa7f85e23a180c351b72
+    commits:
+      - sha: 1f39a4b9d62c9dfa1b21fa7f85e23a180c351b72
+        url: https://github.com/langflow-ai/langflow/commit/1f39a4b9d62c9dfa1b21fa7f85e23a180c351b72
+        pr: 13915
+        pr_url: https://github.com/langflow-ai/langflow/pull/13915
+      - sha: 94859df33acd70b2a1f816e26d68f5e89a7e5639
+        url: https://github.com/langflow-ai/langflow/commit/94859df33acd70b2a1f816e26d68f5e89a7e5639
+        pr: 14071
+        pr_url: https://github.com/langflow-ai/langflow/pull/14071
+  how_verified: >-
+    Both linked. PR #13915 was merged into the "security-hardening" branch and #14071 into
+    "release-1.10.3" (checked via the API); neither commit is in main's history. #13915 is the
+    original fix.

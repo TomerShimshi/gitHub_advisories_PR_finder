@@ -4,11 +4,16 @@ import argparse
 import logging
 import re
 import sys
+from pathlib import Path
 
 from advisory_tracer.cache import DiskCache
 from advisory_tracer.config import Settings
+from advisory_tracer.evaluate import format_table, load_ground_truth, score_fix
+from advisory_tracer.fix_resolver import FixResolver
 from advisory_tracer.github_client import GitHubAuthError, GitHubClient, GitHubError
-from advisory_tracer.ingest import fetch_advisories, save_advisories
+from advisory_tracer.ingest import FetchResult, fetch_advisories, save_advisories
+from advisory_tracer.models import AdvisoryReport
+from advisory_tracer.report import write_yaml
 
 log = logging.getLogger("advisory_tracer")
 
@@ -19,56 +24,145 @@ EXIT_ERROR = 1
 EXIT_CONFIG = 2
 
 
+def _add_selection_args(parser: argparse.ArgumentParser) -> None:
+    parser.add_argument("--ecosystem", default="pip", help="Package ecosystem (default: pip).")
+    parser.add_argument("--limit", type=int, default=10, help="How many advisories (default: 10).")
+    parser.add_argument(
+        "--ids", nargs="+", metavar="GHSA_ID", help="Use these advisories instead of a list."
+    )
+    parser.add_argument("--refresh", action="store_true", help="Ignore cached API responses.")
+
+
 def _build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(prog="tracer", description=__doc__)
     sub = parser.add_subparsers(dest="command", required=True)
 
-    fetch = sub.add_parser("fetch", help="Fetch GitHub advisories and save them to the output dir.")
-    fetch.add_argument("--ecosystem", default="pip", help="Package ecosystem (default: pip).")
-    fetch.add_argument("--limit", type=int, default=10, help="How many advisories (default: 10).")
-    fetch.add_argument(
-        "--ids", nargs="+", metavar="GHSA_ID", help="Fetch these advisories instead of a list."
-    )
-    fetch.add_argument("--refresh", action="store_true", help="Ignore cached API responses.")
+    fetch = sub.add_parser("fetch", help="Fetch advisories and save them to the output dir.")
+    _add_selection_args(fetch)
+
+    resolve = sub.add_parser("resolve-fix", help="Find fix commits and PRs (no LLM).")
+    _add_selection_args(resolve)
+
+    evaluate = sub.add_parser("eval-fix", help="Run resolve-fix on the ground truth and score it.")
+    evaluate.add_argument("--ground-truth", type=Path, default=Path("data/ground_truth.yaml"))
+    evaluate.add_argument("--refresh", action="store_true", help="Ignore cached API responses.")
     return parser
 
 
-def _cmd_fetch(args: argparse.Namespace, settings: Settings) -> int:
+def _validate_selection(args: argparse.Namespace) -> bool:
     if args.ids:
         bad = [i for i in args.ids if not _GHSA_RE.match(i)]
         if bad:
             log.error("not valid GHSA IDs: %s", ", ".join(bad))
-            return EXIT_CONFIG
+            return False
     if args.limit < 1:
         log.error("--limit must be at least 1")
-        return EXIT_CONFIG
+        return False
+    return True
 
-    ttl = 0.0 if args.refresh else settings.advisory_cache_ttl_hours * 3600
+
+def _open_client(settings: Settings, refresh: bool) -> GitHubClient:
     token = settings.github_token.get_secret_value() if settings.github_token else None
-    with GitHubClient(
+    return GitHubClient(
         token,
         DiskCache(settings.cache_dir),
         base_url=settings.github_api_url,
         timeout=settings.http_timeout_seconds,
         max_retries=settings.http_max_retries,
-    ) as client:
-        result = fetch_advisories(
-            client, ecosystem=args.ecosystem, limit=args.limit, ids=args.ids, ttl_seconds=ttl
-        )
-        stats = client.stats
-
-    target = save_advisories(result.advisories, settings.output_dir)
-    for advisory in result.advisories:
-        log.info("saved %s  %s  %s", advisory.ghsa_id, advisory.repo.full_name, advisory.summary)
-    log.info(
-        "done: saved=%d skipped=%d network_calls=%d cache_hits=%d dir=%s",
-        len(result.advisories),
-        len(result.skipped),
-        stats.network_calls,
-        stats.cache_hits,
-        target,
+        mutable_ttl_seconds=0.0 if refresh else settings.advisory_cache_ttl_hours * 3600,
     )
+
+
+def _select(client: GitHubClient, args: argparse.Namespace, settings: Settings) -> FetchResult:
+    ttl = 0.0 if args.refresh else settings.advisory_cache_ttl_hours * 3600
+    return fetch_advisories(
+        client, ecosystem=args.ecosystem, limit=args.limit, ids=args.ids, ttl_seconds=ttl
+    )
+
+
+def _log_stats(client: GitHubClient, **extra: object) -> None:
+    details = " ".join(f"{k}={v}" for k, v in extra.items())
+    log.info(
+        "done: %s network_calls=%d cache_hits=%d",
+        details,
+        client.stats.network_calls,
+        client.stats.cache_hits,
+    )
+
+
+def _cmd_fetch(args: argparse.Namespace, settings: Settings) -> int:
+    if not _validate_selection(args):
+        return EXIT_CONFIG
+    with _open_client(settings, args.refresh) as client:
+        result = _select(client, args, settings)
+        target = save_advisories(result.advisories, settings.output_dir)
+        for a in result.advisories:
+            log.info("saved %s  %s  %s", a.ghsa_id, a.repo.full_name, a.summary)
+        _log_stats(client, saved=len(result.advisories), skipped=len(result.skipped), dir=target)
     return EXIT_OK
+
+
+def _cmd_resolve_fix(args: argparse.Namespace, settings: Settings) -> int:
+    if not _validate_selection(args):
+        return EXIT_CONFIG
+    with _open_client(settings, args.refresh) as client:
+        advisories = _select(client, args, settings).advisories
+        resolver = FixResolver(client)
+        reports = []
+        for advisory in advisories:
+            report = AdvisoryReport(
+                ghsa_id=advisory.ghsa_id,
+                cve_id=advisory.cve_id,
+                repo=advisory.repo.full_name,
+                summary=advisory.summary,
+            )
+            try:
+                report.fix = resolver.resolve(advisory)
+            except GitHubAuthError:
+                raise
+            except GitHubError as exc:  # One bad advisory must not stop the rest.
+                report.error = str(exc)
+                log.warning("%s failed: %s", advisory.ghsa_id, exc)
+            reports.append(report)
+            primary = report.fix.primary
+            log.info(
+                "%s  fix=%s  pr=%s  confidence=%s  commits=%d  candidates=%d",
+                advisory.ghsa_id,
+                primary.sha[:12] if primary.sha else "not_found",
+                f"#{primary.pr_number}" if primary.pr_number else "-",
+                primary.confidence.value,
+                len(report.fix.commits),
+                len(report.fix.candidates),
+            )
+        path = write_yaml(reports, settings.output_dir / "fix_results.yaml")
+        _log_stats(client, advisories=len(reports), file=path)
+    return EXIT_OK
+
+
+def _cmd_eval_fix(args: argparse.Namespace, settings: Settings) -> int:
+    if not args.ground_truth.exists():
+        log.error("ground truth file not found: %s", args.ground_truth)
+        return EXIT_CONFIG
+    truth = load_ground_truth(args.ground_truth)
+    resolve_args = argparse.Namespace(
+        ids=[t.ghsa_id for t in truth], ecosystem=None, limit=len(truth), refresh=args.refresh
+    )
+    with _open_client(settings, args.refresh) as client:
+        advisories = {a.ghsa_id: a for a in _select(client, resolve_args, settings).advisories}
+        resolver = FixResolver(client)
+        scores = []
+        reports = []
+        for entry in truth:
+            finding = resolver.resolve(advisories[entry.ghsa_id])
+            scores.append(score_fix(entry, finding))
+            reports.append(AdvisoryReport(ghsa_id=entry.ghsa_id, repo=entry.repo, fix=finding))
+        write_yaml(reports, settings.output_dir / "fix_eval_results.yaml")
+        print(format_table(scores))
+        _log_stats(client, advisories=len(truth))
+    return EXIT_OK
+
+
+_COMMANDS = {"fetch": _cmd_fetch, "resolve-fix": _cmd_resolve_fix, "eval-fix": _cmd_eval_fix}
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -78,20 +172,20 @@ def main(argv: list[str] | None = None) -> int:
         level=settings.log_level.upper(),
         format="%(asctime)s %(levelname)s %(name)s: %(message)s",
     )
+    # httpx logs every request at INFO; keep it for debugging only.
+    logging.getLogger("httpx").setLevel(logging.WARNING)
     if settings.github_token is None:
         log.error("GITHUB_TOKEN is not set. Add it to your .env file (see README).")
         return EXIT_CONFIG
 
     try:
-        if args.command == "fetch":
-            return _cmd_fetch(args, settings)
+        return _COMMANDS[args.command](args, settings)
     except GitHubAuthError as exc:
         log.error("%s", exc)
         return EXIT_CONFIG
     except GitHubError as exc:
         log.error("%s", exc)
         return EXIT_ERROR
-    return EXIT_ERROR
 
 
 if __name__ == "__main__":
