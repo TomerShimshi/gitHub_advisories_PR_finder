@@ -134,5 +134,6 @@ From Plan 2 (see its Results):
 
 **Known gaps:**
 - The 3 misses above (renamed or moved code, and bugs dating back to the initial commit).
+- **The "rejected and retried" rule is not implemented.** The judge runs once; an answer that fails the code checks is reported with its verdict but not retried with the failure reason.
 - Budget-cap stop not tested by a run (the code checks the cap before every call).
 - No unit tests yet for `llm.py` and `agent.py`.

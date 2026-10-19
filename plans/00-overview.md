@@ -18,6 +18,15 @@ Scored on: success rate, cost savings (out of a $150 budget), production readine
 
 Plan 5 is the "main objective done" gate. Bonuses start only after it passes.
 
+## Open gaps at hand-in (2026-10-19)
+
+- **No retry loop:** the Opus judge is called once; the verifier's `plausible` / `rejected` verdict is recorded but does not trigger a retry with feedback (planned in Plan 3).
+- **No second-opinion LLM verifier** from a third model family (Plan 4).
+- **Agent 7/10 on the ground truth:** misses on urllib3 (flagged, not verified), pydantic-ai and CairoSVG (not found).
+- **Tests missing** for `llm.py`, `agent.py`, `pipeline.py`, for corrupted-answer verification, and for the budget-cap stop.
+- **Ground-truth check script** not committed.
+- **Bonus 1 partial** (thread pool, no shared GitHub rate limiter); **Bonus 2 not started**.
+
 ## Ground rules
 
 - **Everything runs in Docker.** Code is edited on the host but never runs there; the host only needs Docker Desktop.

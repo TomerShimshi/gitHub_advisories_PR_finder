@@ -152,6 +152,11 @@ With more time (from the `# SECURITY:` comments in the code):
 - **Missing release tags** (langflow-style) weaken the release-range and introduction-window steps.
 - **Unlinked fixes** rely on candidate ranking by word overlap with the advisory text.
 - The agent runs today through `eval-intro` on the ground-truth set; `resolve-fix` covers the fix side for any advisory list.
+- **No retry on failed checks.** The Opus judge is called once per advisory and the deterministic verifier only records its verdict (`verified` / `plausible` / `rejected`). A `plausible` or `rejected` answer is not sent back to the investigator or the judge with the failure reason. Planned design: one retry with the verifier's feedback (e.g. "the quoted code is not in that commit's added lines"), then `not_found`.
+- **No second-opinion LLM verifier.** Plan 4 called for an LLM judge from a third model family (neither DeepSeek nor Claude) to review what the code checks can't settle; only the deterministic checks exist.
+- **Agent misses on the ground truth (3/10):** urllib3 (wrong commit, flagged `plausible`), pydantic-ai and CairoSVG (not found): renamed or moved code, and bugs dating back to the initial commit.
+- **Tests:** no unit tests yet for `llm.py`, `agent.py` or `pipeline.py`, none that feed the verifier deliberately corrupted answers, and the budget-cap stop has not been triggered in a test (the cap is checked before every call).
+- The script that checked the ground truth's quotes, ancestry and links was run during development but is not in the repo.
 - Bonus 1 (parallel agents) is partly done: `run` and `eval-intro` trace advisories in a thread pool (`--workers`), sharing the thread-safe cost tracker and caches; there is no shared GitHub rate limiter across threads yet. Bonus 2 (Docker environment generation for web apps) is not implemented.
 
 ## Tests
